@@ -4,6 +4,9 @@
 #include <ctime>
 #include <limits>
 
+
+#pragma warning (disable: 4703)
+
 void FillArray(double * pd2dArray, size_t unRows, size_t unCols, double dBegin, double dEnd);
 void ShowArray(double * pd2dArray, size_t unRows, size_t unCols);
 
@@ -12,7 +15,7 @@ int main(int argc, char** argv)
 {
 	int nRows, nCols;
 	int ProcRank, ProcNum;
-	
+
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
 	MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
@@ -29,11 +32,21 @@ int main(int argc, char** argv)
 			nCols = 3;
 		}
 	}
+
 	MPI_Bcast(&nRows, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&nCols, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	
+	MPI_Datatype MatrixCol;
+	MPI_Type_vector(nRows, 1, 1, MPI_DOUBLE, &MatrixCol);
+	MPI_Type_commit(&MatrixCol);
+
 	double * pdMatrix, *pdRecvMatrix, *pdChunksOfSumArray;
-	double * pdSumArray = new double[nCols] {0};
+	double * pdSumArray;
+	
+	if (nCols >= ProcNum || (ProcRank == 0 && nCols < ProcNum))
+		pdSumArray = new double[nCols] {0};
+
+
 	double dStartTime;
 	if (ProcRank == 0)
 	{
@@ -50,67 +63,72 @@ int main(int argc, char** argv)
 	{
 		pdMatrix = nullptr;
 	}
-	
-	int * pnSendCounts = new int[ProcNum];
-	int * pnRecvCounts = new int[ProcNum];
-	int * pnDispls = new int[ProcNum];
-	int * pnRecvDispls = new int[ProcNum];
-	if (ProcRank == 0)
+
+	if (nCols < ProcNum && ProcRank == 0)
 	{
-		int nSendSum = 0;
-		int nRecvSum = 0;
-		int nRemColsPerProc = nCols % ProcNum;
-		for (size_t i = 0; i < ProcNum; i++)
+		int nCount = 0;
+		for (int i = 0; i < nCols * nRows; i++)
 		{
-			pnSendCounts[i] = nCols / ProcNum * nRows;
-			pnRecvCounts[i] = pnSendCounts[i] / nRows;
-			if (nRemColsPerProc > 0)
-			{
-				pnRecvCounts[i]++;
-				pnSendCounts[i] += nRows;
-				nRemColsPerProc--;
-			}
-			pnDispls[i] = nSendSum;
-			nSendSum += pnSendCounts[i];
-			pnRecvDispls[i] = nRecvSum;
-			nRecvSum += pnRecvCounts[i];
+			if (i != 0 && i % nRows == 0)
+				nCount++;
+			pdSumArray[nCount] += pdMatrix[i];
 		}
+
 	}
-	MPI_Bcast(pnSendCounts, ProcNum, MPI_INT, 0, MPI_COMM_WORLD);
-	MPI_Bcast(pnRecvCounts, ProcNum, MPI_INT, 0, MPI_COMM_WORLD);
-	MPI_Bcast(pnDispls, ProcNum, MPI_INT, 0, MPI_COMM_WORLD);
-	MPI_Bcast(pnRecvDispls, ProcNum, MPI_INT, 0, MPI_COMM_WORLD);
-	
-	pdChunksOfSumArray = new double[pnRecvCounts[ProcRank]]{ 0 };
-	pdRecvMatrix = new double[pnSendCounts[ProcRank]];
-	MPI_Scatterv(pdMatrix, pnSendCounts, pnDispls, MPI_DOUBLE, pdRecvMatrix, pnSendCounts[ProcRank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	
-	int nCount = 0;
-	for (int i = 0; i < pnSendCounts[ProcRank]; i++)
+	else
 	{
-		if (i != 0 && i % nRows == 0) 
-			nCount++;
-		pdChunksOfSumArray[nCount] += pdRecvMatrix[i];
+		int * pnColCounts = new int[ProcNum];
+		int * pnColDispls = new int[ProcNum];
+		if (ProcRank == 0)
+		{
+			int nSendSum = 0;
+			int nRecvSum = 0;
+			int nRemColsPerProc = nCols % ProcNum;
+			for (size_t i = 0; i < ProcNum; i++)
+			{
+				pnColCounts[i] = nCols / ProcNum;
+				if (nRemColsPerProc > 0)
+				{
+					pnColCounts[i]++;
+					nRemColsPerProc--;
+				}
+				pnColDispls[i] = nRecvSum;
+				nRecvSum += pnColCounts[i];
+			}
+		}
+		MPI_Bcast(pnColCounts, ProcNum, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_Bcast(pnColDispls, ProcNum, MPI_INT, 0, MPI_COMM_WORLD);
+
+		pdChunksOfSumArray = new double[pnColCounts[ProcRank]]{ 0 };
+		pdRecvMatrix = new double[pnColCounts[ProcRank] * nRows];
+
+		MPI_Scatterv(pdMatrix, pnColCounts, pnColDispls, MatrixCol, pdRecvMatrix, pnColCounts[ProcRank], MatrixCol, 0, MPI_COMM_WORLD);
+
+		int nCount = 0;
+		for (int i = 0; i < pnColCounts[ProcRank] * nRows; i++)
+		{
+			if (i != 0 && i % nRows == 0)
+				nCount++;
+			pdChunksOfSumArray[nCount] += pdRecvMatrix[i];
+		}
+
+		MPI_Gatherv(pdChunksOfSumArray, nCount + 1, MPI_DOUBLE, pdSumArray, pnColCounts, pnColDispls, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+		delete[] pnColCounts, pnColDispls;
 	}
-	
-	MPI_Gatherv(pdChunksOfSumArray, nCount + 1, MPI_DOUBLE, pdSumArray, pnRecvCounts, pnRecvDispls, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	if (ProcRank == 0)
 	{
 		double dTimeDiff = MPI_Wtime() - dStartTime;
 		std::cout << "Time is " << dTimeDiff << " sec" << std::endl;
 	}
-	
+
 	MPI_Finalize();
 	if (ProcRank == 0)
 	{
-		for (size_t i = 0; i < nCols; i++)
-		{
-			std::cout << pdSumArray[i] << " ";
-		}
+		ShowArray(pdSumArray, 1, nCols);
 		std::cout << std::endl;
 	}
 	delete[] pdMatrix, pdRecvMatrix, pdChunksOfSumArray, pdSumArray;
-	delete[] pnSendCounts, pnRecvCounts, pnDispls, pnRecvDispls;
+	
 	return 0;
 }
 
