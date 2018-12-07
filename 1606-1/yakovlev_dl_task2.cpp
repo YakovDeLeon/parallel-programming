@@ -3,55 +3,150 @@
 #include <cmath>
 #include <cstdlib>
 #include <cassert>
+
 static const int nBaseLog = 2;
+
 size_t TypeSize(MPI_Datatype type);
 void* PointerOffset(MPI_Datatype type, void* buf, unsigned int nOffset);
 int OlderBit(int nNum);
 int NumberOlderBit(int nNum);
 int Scatter(void* sendbuf, int sendcount, MPI_Datatype sendtype, void* recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm);
 
-
-static size_t nSizeArr = 9;
-
-int main(int argc, char**argv)
+template <typename Type>
+Type* CreateArray(size_t unSizeArr)
 {
-	char str[]{ "abcdefghi" };
-	int nums[]{ 1,2,3,4,5,6,7,8,9 };
+	Type* pArr = new Type[unSizeArr];
+	for (size_t i = 0; i < unSizeArr; i++)
+	{
+		pArr[i] = static_cast<Type>(i);
+	}
+	return pArr;
+}
+
+template <>
+char* CreateArray(size_t unSizeArr)
+{
+	char* pArr = new char[unSizeArr];
+	pArr[0] = 'a';
+	for (size_t i = 1; i < unSizeArr; i++)
+	{
+		pArr[i] = pArr[i-1] + 1;
+	}
+	return pArr;
+}
+
+size_t nSizeArr = 9;
+
+int main(int argc, char**argv) 
+{
 	int ProcRank, ProcNum;
-	int nRoot;
+	int nRoot{ 0 };
 	if (argc > 1)
+	{
 		nRoot = atoi(argv[1]);
+		if (argc > 2)
+			nSizeArr = atoi(argv[2]);
+	}
+
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
 	MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
+	if (nRoot >= ProcNum)
+	{
+		if (ProcRank == 0)
+			std::cout << "Incorect root process! Terminate!" << std::endl;
+		MPI_Finalize();
+		return -1;
+	}
+	
+	char* psArr = CreateArray<char>(nSizeArr);
+	int* pnArr = CreateArray<int>(nSizeArr);
+	double* pdArr = CreateArray<double>(nSizeArr);
+	
 	char* pCharRecvBuf = new char[nSizeArr / ProcNum];
 	int* pIntRecvBuf = new int[nSizeArr / ProcNum];
-	MPI_Scatter(str, nSizeArr / ProcNum, MPI_CHAR, pCharRecvBuf, nSizeArr / ProcNum, MPI_CHAR, 0, MPI_COMM_WORLD);
-	MPI_Scatter(nums, nSizeArr / ProcNum, MPI_INT, pIntRecvBuf, nSizeArr / ProcNum, MPI_INT, nRoot, MPI_COMM_WORLD);
+	double* pDoubleRecvBuf = new double[nSizeArr / ProcNum];
 	
-	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
+	double dStartTime{ 0 };
+
+	if (ProcRank == nRoot)
+		dStartTime = MPI_Wtime();
+	MPI_Scatter(psArr, nSizeArr / ProcNum, MPI_CHAR, pCharRecvBuf, nSizeArr / ProcNum, MPI_CHAR, nRoot, MPI_COMM_WORLD);
+	if (ProcRank == nRoot)
 	{
-		std::cout << "ProcRank " << ProcRank << " pIntRecvBuf[" << i << "] ";
-		std::cout << pIntRecvBuf[i] << std::endl;
+		std::cout << "MPI_Scatter for datatype's int has been done in time: " << MPI_Wtime() - dStartTime << std::endl;
+		dStartTime = MPI_Wtime();
+	}
+	MPI_Scatter(pnArr, nSizeArr / ProcNum, MPI_INT, pIntRecvBuf, nSizeArr / ProcNum, MPI_INT, nRoot, MPI_COMM_WORLD);
+	if (ProcRank == nRoot)
+	{
+		std::cout << "MPI_Scatter for datatype's int has been done in time: " << MPI_Wtime() - dStartTime << std::endl;
+		dStartTime = MPI_Wtime();
+	}
+	MPI_Scatter(pdArr, nSizeArr / ProcNum, MPI_DOUBLE, pDoubleRecvBuf, nSizeArr / ProcNum, MPI_DOUBLE, nRoot, MPI_COMM_WORLD);
+	if (ProcRank == nRoot)
+	{
+		std::cout << "MPI_Scatter for datatype's int has been done in time: " << MPI_Wtime() - dStartTime << std::endl;
+		dStartTime = MPI_Wtime();
 	}
 	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
 	{
 		std::cout << "ProcRank " << ProcRank << " pCharRecvBuf[" << i << "] ";
 		std::cout << pCharRecvBuf[i] << std::endl;
 	}
-	
-	Scatter(str, nSizeArr / ProcNum, MPI_CHAR, pCharRecvBuf, nSizeArr / ProcNum, MPI_CHAR, 0, MPI_COMM_WORLD);
-	Scatter(nums, nSizeArr / ProcNum, MPI_INT, pIntRecvBuf, nSizeArr / ProcNum, MPI_INT, nRoot, MPI_COMM_WORLD);
+
 	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
 	{
 		std::cout << "ProcRank " << ProcRank << " pIntRecvBuf[" << i << "] ";
 		std::cout << pIntRecvBuf[i] << std::endl;
 	}
+
+	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
+	{
+		std::cout << "ProcRank " << ProcRank << " pDoubleRecvBuf[" << i << "] ";
+		std::cout << pDoubleRecvBuf[i] << std::endl;
+	}
+	
+	Scatter(psArr, nSizeArr / ProcNum, MPI_CHAR, pCharRecvBuf, nSizeArr / ProcNum, MPI_CHAR, nRoot, MPI_COMM_WORLD);
+	if (ProcRank == nRoot)
+	{
+		std::cout << "MY_Scatter for datatype's char has been done in time: " << MPI_Wtime() - dStartTime << std::endl;
+		dStartTime = MPI_Wtime();
+	}
+	
+	Scatter(pnArr, nSizeArr / ProcNum, MPI_INT, pIntRecvBuf, nSizeArr / ProcNum, MPI_INT, nRoot, MPI_COMM_WORLD);
+	if (ProcRank == nRoot)
+	{
+		std::cout << "MY_Scatter for datatype's int has been done in time: " << MPI_Wtime() - dStartTime << std::endl;
+		dStartTime = MPI_Wtime();
+	}
+	
+	Scatter(pdArr, nSizeArr / ProcNum, MPI_DOUBLE, pDoubleRecvBuf, nSizeArr / ProcNum, MPI_DOUBLE, nRoot, MPI_COMM_WORLD);
+	if (ProcRank == nRoot)
+	{
+		std::cout << "MY_Scatter for datatype's double has been done in time: " << MPI_Wtime() - dStartTime << std::endl;
+		dStartTime = MPI_Wtime();
+	}
+	
 	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
 	{
 		std::cout << "ProcRank " << ProcRank << " pCharRecvBuf[" << i << "] ";
 		std::cout << pCharRecvBuf[i] << std::endl;
 	}
+
+	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
+	{
+		std::cout << "ProcRank " << ProcRank << " pIntRecvBuf[" << i << "] ";
+		std::cout << pIntRecvBuf[i] << std::endl;
+	}
+	
+	for (size_t i = 0; i < nSizeArr / ProcNum; i++)
+	{
+		std::cout << "ProcRank " << ProcRank << " pDoubleRecvBuf[" << i << "] ";
+		std::cout << pDoubleRecvBuf[i] << std::endl;
+	}
+
+	delete[] psArr, pnArr, pdArr, pCharRecvBuf, pIntRecvBuf, pDoubleRecvBuf;
 	MPI_Finalize();
 }
 
@@ -76,6 +171,7 @@ int Scatter(void* sendbuf, int sendcount, MPI_Datatype sendtype, void* recvbuf, 
 	if (ProcRank != root)
 	MPI_Recv(recvbuf, recvcount, recvtype, root, 0, comm, &status);
 	}*/
+
 	int nRankReceiver{ 0 };
 	int nRankSender{ 0 };
 	int nNewProcRank = (ProcRank < root ? ProcRank + 1 : ProcRank);
@@ -95,7 +191,7 @@ int Scatter(void* sendbuf, int sendcount, MPI_Datatype sendtype, void* recvbuf, 
 			nRankSender--;
 		MPI_Recv(pvTmpBuf, sendcount * ProcNum, recvtype, nRankSender, 0, comm, &status);
 	}
-	int unCicleSize = NumberOlderBit(ProcNum) - 1; // = std::log(ProcNum) / std::log(nBaseLog);
+	int unCicleSize = NumberOlderBit(ProcNum) - 1; // = std::log(ProcNum) / std::log(nBaseLog)
 	if (ProcNum % nBaseLog > 0)
 		unCicleSize++;
 	assert(unCicleSize >= 0);
@@ -256,3 +352,4 @@ int NumberOlderBit(int nNum)
 	}
 	return nCount;
 }
+
