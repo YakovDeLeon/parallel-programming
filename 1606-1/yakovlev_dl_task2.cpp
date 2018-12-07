@@ -35,7 +35,7 @@ char* CreateArray(size_t unSizeArr)
 	return pArr;
 }
 
-size_t nSizeArr = 9;
+static size_t nSizeArr = 9;
 
 int main(int argc, char**argv) 
 {
