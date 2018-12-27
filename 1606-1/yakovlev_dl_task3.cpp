@@ -55,7 +55,7 @@ int main(int argc, char** argv)
 	{
 		pdArr = new double[nSizeArr];
 		if (argc == 5)
-			FillArray(pdArr, nSizeArr, atof(argv[3]), atof(argv[4]));
+			FillArray(pdArr, nSizeArr, atof(argv[2]), atof(argv[3]));
 		else
 			FillArray(pdArr, nSizeArr, 0.f, 10.f);
 		
@@ -67,11 +67,12 @@ int main(int argc, char** argv)
 		pdArr = nullptr;
 	}
 	
-	int * pnArrCounts = new int[ProcNum];
-	int * pnArrDispls = new int[ProcNum];
+	int * pnArrCounts = new int[ProcNum]; // 4 3 3 
+
+	 // 1 2 3 4 5 6 7 8 9 10
+	int * pnArrDispls = new int[ProcNum]; // 0 4 7
 	if (ProcRank == 0)
 	{
-		int nSendSum = 0;
 		int nRecvSum = 0;
 		int nRemSizePerProc = nSizeArr % ProcNum;
 		for (size_t i = 0; i < ProcNum; i++)
@@ -99,14 +100,14 @@ int main(int argc, char** argv)
 	if (ProcRank == 0)
 	{
 		endTime = chrono::high_resolution_clock::now();
-		auto WorkTimeParallel = chrono::duration_cast<chrono::nanoseconds>(endTime - startTime).count();
-		cout << "Time's work parallel version: " << WorkTimeParallel << "ns" << endl;
+		auto WorkTimeParallel = chrono::duration_cast<chrono::milliseconds>(endTime - startTime).count();
+		cout << "Time's work parallel version: " << (double)WorkTimeParallel/1000 << " sec" << endl;
 		
 		startTime = chrono::high_resolution_clock::now();
 		ShellsSort(pdArr, nSizeArr);
 		endTime = chrono::high_resolution_clock::now();
-		auto WorkTimeSerial = chrono::duration_cast<chrono::nanoseconds>(endTime - startTime).count();
-		cout << "Time's work serial version: " << WorkTimeSerial << "ns" << endl;
+		auto WorkTimeSerial = chrono::duration_cast<chrono::milliseconds>(endTime - startTime).count();
+		cout << "Time's work serial version: " << (double)WorkTimeSerial/1000 << " sec" << endl;
 		string sLess = (WorkTimeParallel < WorkTimeSerial ? "faster" : "slower");
 		cout << "Parallel version " << sLess << " serial version!" << std::endl;
 		for (size_t i = 0; i < nSizeArr; i++)
@@ -147,7 +148,7 @@ void RealocArray(Type*& pArr, size_t nOldSize, size_t nNewSize)
 {
 	assert(nOldSize <= nNewSize);
 	Type* pNewArr = new Type[nNewSize]{ 0 };
-	memcpy(pNewArr, pArr, nOldSize);
+	memcpy(pNewArr, pArr, nOldSize * sizeof(Type));
 	delete[] pArr;
 	pArr = nullptr;
 	pArr = pNewArr;
@@ -212,7 +213,7 @@ template<typename T>
 void MergeArrays(T* mas1, T* mas2, T* tmp, size_t size1, size_t size2)
 {
 	int nMedIndex = BinSearch(mas2, 0, size2, (mas1[size1 / 2]));
-	int nTmp1Size = nMedIndex + size1 / 2;
+	int nTmp1Size = nMedIndex + size1 / 2;                          
 	int nTmp2Size = size1 + size2 - nTmp1Size;
 	T* tmp1 = new T[nTmp1Size];
 	T* tmp2 = new T[nTmp2Size];
@@ -300,7 +301,7 @@ void* PointerOffset(MPI_Datatype type, void* buf, unsigned int nOffset)
 		std::cout << "Pointer must not be nullptr!" << std::endl;
 		exit(1);
 	}
-	// Ã¯Ã°Ã®Ã¢Ã¥Ã°Ã¨Ã²Ã¼ ÃªÃ®Ã­Ã±Ã²Ã Ã­Ã²Ã­Ã®Ã±Ã²Ã¼? 
+	// ïðîâåðèòü êîíñòàíòíîñòü? 
 	switch (type)
 	{
 	default:
@@ -389,12 +390,12 @@ int Shell_Reduce(Type *sendbuf, int *sendcount, Type *recvbuf, int sizearr, MPI_
 	{
 		if (ProcRank == root)
 		{
-			nRankSender = std::pow(2, i);
+			nRankSender = 1 << i;
 			nRankSender <= root ? nRankSender-- : nRankSender;
 		}
 		else
 		{
-			nRankSender = std::pow(2, i) + newProcRank;
+			nRankSender = (1 << i) + newProcRank;
 			if (nRankSender <= root)
 				nRankSender--;
 		}
